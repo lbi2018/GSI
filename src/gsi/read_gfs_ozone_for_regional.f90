@@ -29,6 +29,7 @@ subroutine read_gfs_ozone_for_regional
 !   2015-05-13  wu      - read in just one GFS for ozone even when nfldsig > 1 
 !                         use the same ges_oz in all time levels
 !   2016-12-12  tong    - add code to get nemsio meta data, if use_gfs_nemsio=True
+!   2012-07-02  bi      - add code to get netcdf data, if use_gfs_ncio=.true.
 !
 !   input argument list:
 !
@@ -41,7 +42,8 @@ subroutine read_gfs_ozone_for_regional
 !$$$ end documentation block
 
   use gridmod, only: nlat,nlon,lat2,lon2,nsig,region_lat,region_lon,check_gfs_ozone_date
-  use gridmod, only: jcap_gfs,nlat_gfs,nlon_gfs,wrf_nmm_regional,use_gfs_nemsio
+  use gridmod, only: jcap_gfs,nlat_gfs,nlon_gfs,wrf_nmm_regional,use_gfs_nemsio, &
+                     use_gfs_ncio
   use constants,only: zero,half,rd_over_cp,one,h300,r60,r3600
   use constants, only: max_varname_length
   use mpimod, only: mpi_comm_world,ierror,mype,mpi_rtype,mpi_min,mpi_max,npe
@@ -64,6 +66,9 @@ subroutine read_gfs_ozone_for_regional
   use nemsio_module, only: nemsio_init,nemsio_open,nemsio_close
   use ncepnems_io, only: error_msg
   use nemsio_module, only: nemsio_gfile,nemsio_getfilehead
+  use module_fv3gfs_ncio, only: Dataset, Dimension, get_dim, read_vardata,&
+                                 open_dataset, close_dataset, read_attribute,&
+                                 get_idate_from_time_units
 
   implicit none
 
@@ -88,6 +93,7 @@ subroutine read_gfs_ozone_for_regional
   integer(i_kind) iret,i,j,k,k2,ndim
   integer(i_kind) it,it_beg,it_end   
   integer(i_kind) istatus
+  integer(i_kind) kr
   character(24) filename
   character(255),allocatable,dimension(:)::infiles
   logical uv_hyb_ens
@@ -106,6 +112,7 @@ subroutine read_gfs_ozone_for_regional
   real(r_kind),allocatable,dimension(:) :: xspli,yspli,xsplo,ysplo
   integer(i_kind) iyr,ihourg
   integer(i_kind),dimension(4):: idate4
+  integer(i_kind),dimension(6):: idate6
   integer(i_kind),dimension(8) :: ida,jda 
   integer(i_kind),dimension(5) :: iadate_gfs
   real(r_kind) hourg
@@ -124,6 +131,10 @@ subroutine read_gfs_ozone_for_regional
   real(r_kind),allocatable,dimension(:)::glb_ozmin,glb_ozmax,reg_ozmin,reg_ozmax
   real(r_kind),allocatable,dimension(:)::glb_ozmin0,glb_ozmax0,reg_ozmin0,reg_ozmax0
   real(r_kind),allocatable,dimension(:,:,:,:)::ges_oz
+  logical print_verbose
+  type(Dataset) :: atmges
+  type(Dimension) :: ncdim
+  real(r_kind), allocatable, dimension(:) :: fhour2,aknc,bknc
 
   type(gsi_bundle) :: atm_bundle
   type(gsi_grid)   :: atm_grid
@@ -171,7 +182,7 @@ subroutine read_gfs_ozone_for_regional
   filename=infiles(it)
   if (mype==0) write(6,*)'read_gfs_ozone_for_regional: reading in gfs file:',trim(filename)                  
 
-  if(.not. use_gfs_nemsio)then
+  if ((.not. use_gfs_nemsio) .and. (.not. use_gfs_ncio))then
      open(lunges,file=trim(filename),form='unformatted')
      call sigio_srhead(lunges,sighead,iret)
      close(lunges)
@@ -197,6 +208,46 @@ subroutine read_gfs_ozone_for_regional
      idate4(2)= sighead%idate(2)
      idate4(3)= sighead%idate(3)
      idate4(4)= sighead%idate(4)
+
+! LB: add netcdf code here
+   else if (use_gfs_ncio) then
+      write(6,*) 'LB test0', filename
+      atmges = open_dataset(filename)
+      write(6,*) 'LB test3' 
+      ! get dimension sizes
+      ncdim = get_dim(atmges, 'grid_xt'); lonb = ncdim%len
+      ncdim = get_dim(atmges, 'grid_yt'); latb = ncdim%len
+      ncdim = get_dim(atmges, 'pfull'); levs = ncdim%len
+      nsig_gfs=levs
+      write(6,*) 'LB test4', lonb, latb, levs
+
+      ! get time information
+      idate6 = get_idate_from_time_units(atmges)
+      write(6,*) 'LB test5', idate6
+      call read_vardata(atmges, 'time', fhour2) ! might need to change this to attribute later
+                                               ! depends on model changes from Jeff Whitaker
+      fhour = fhour2(1)
+      write(6,*) ' input filename=',filename
+      write(6,*) ' netcdf info: fhour,idate=',fhour,idate6
+      write(6,*) ' netcdf info: levs=',levs
+
+      nvcoord=2 ! ak and bk
+      allocate(vcoord(levs+1,nvcoord))
+      call read_attribute(atmges, 'ak', aknc)
+      call read_attribute(atmges, 'bk', bknc)
+      do k=1,levs+1
+         kr = levs+2-k
+         vcoord(k,1) = aknc(kr)
+         vcoord(k,2) = bknc(kr)
+      end do
+      if(print_verbose)then
+         write(6,*) ' netcdf : nvcoord=', nvcoord
+         do k=1,levs+1
+            write(6,*)' k,vcoord=',k,vcoord(k,:)
+         enddo
+      end if
+      call close_dataset(atmges)
+
   else
      call nemsio_init(iret=iret)
      if (iret /= 0) call error_msg(trim(my_name),trim(filename),' ','init',istop,iret)
@@ -315,7 +366,7 @@ subroutine read_gfs_ozone_for_regional
      bk5(k)=zero
      ck5(k)=zero
   end do
-  if (.not. use_gfs_nemsio) then
+  if((.not. use_gfs_nemsio).and.(.not. use_gfs_ncio))then
      if (sighead%nvcoord == 1) then
         do k=1,sighead%levs+1
            bk5(k) = sighead%vcoord(k,1)
@@ -373,7 +424,7 @@ subroutine read_gfs_ozone_for_regional
      hires=.true.
   else
      hires=.false.
-     if(.not. use_gfs_nemsio)then
+     if((.not. use_gfs_nemsio).and.(.not. use_gfs_ncio))then
         jcap_gfs=sighead%jcap
         nlat_gfs=sighead%latf+2
         nlon_gfs=sighead%lonf
@@ -399,7 +450,7 @@ subroutine read_gfs_ozone_for_regional
   deallocate(vector)
   jcap_gfs_test=jcap_gfs
   call general_init_spec_vars(sp_gfs,jcap_gfs,jcap_gfs_test,grd_gfs%nlat,grd_gfs%nlon)
-  if (hires .and. .not. use_gfs_nemsio) then
+  if (hires .and. .not. use_gfs_nemsio .and. .not. use_gfs_ncio) then
       call general_init_spec_vars(sp_b,jcap_org,jcap_org,nlat_gfs,nlon_b)
   end if
 
@@ -425,6 +476,9 @@ subroutine read_gfs_ozone_for_regional
   allocate(prsl(grd_gfs%lat2,grd_gfs%lon2,grd_gfs%nsig))
   if(use_gfs_nemsio)then
      call general_read_gfsatm_nems(grd_gfst,sp_gfs,filename,uv_hyb_ens,.false.,.false., &
+                              atm_bundle,.true.,iret)
+  else if (use_gfs_ncio) then
+     call general_read_gfsatm_nc(grd_gfst,sp_gfs,filename,uv_hyb_ens,.false.,.true., &
                               atm_bundle,.true.,iret)
   else
      if (hires) then
@@ -623,7 +677,7 @@ subroutine read_gfs_ozone_for_regional
      end do
   end if
   call general_destroy_spec_vars(sp_gfs)
-  if ( hires .and. .not. use_gfs_nemsio ) call general_destroy_spec_vars(sp_b)
+  if ( hires .and. .not. use_gfs_nemsio .and. .not. use_gfs_ncio) call general_destroy_spec_vars(sp_b)
   deallocate(xspli,yspli,xsplo,ysplo,glb_ozmin,glb_ozmax,reg_ozmin,reg_ozmax,&
              glb_ozmin0,glb_ozmax0,reg_ozmin0,reg_ozmax0)
 
