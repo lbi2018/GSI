@@ -221,6 +221,9 @@ subroutine read_gfs_ozone_for_regional
       nsig_gfs=levs
       write(6,*) 'LB test4', lonb, latb, levs
 
+      ! FV3GFS write component does not include JCAP, infer from DIMY-2
+      if (njcap<0) njcap=latb-2
+
       ! get time information
       idate6 = get_idate_from_time_units(atmges)
       write(6,*) 'LB test5', idate6
@@ -230,6 +233,9 @@ subroutine read_gfs_ozone_for_regional
       write(6,*) ' input filename=',filename
       write(6,*) ' netcdf info: fhour,idate=',fhour,idate6
       write(6,*) ' netcdf info: levs=',levs
+
+      nsig_gfs=levs
+      jcap_org=njcap
 
       nvcoord=2 ! ak and bk
       allocate(vcoord(levs+1,nvcoord))

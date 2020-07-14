@@ -279,22 +279,17 @@ module module_fv3gfs_ncio
     else
       dset%isparallel = .false.
     end if
-    write(6,*) 'dset%isparallel=', dset%isparallel
     ! open netcdf file, get info, populate Dataset object.
     if (dset%isparallel) then
       if (present(mpicomm)) then
          ncerr = nf90_open(trim(filename), ior(NF90_NOWRITE, NF90_MPIIO), &
                            comm=mpicomm, info = mpi_info_null, ncid=dset%ncid)
-         write(6,*), 'true mpicomm', ncerr
       else
          ncerr = nf90_open(trim(filename), ior(NF90_NOWRITE, NF90_MPIIO), &
                            comm=mpi_comm_world, info = mpi_info_null, ncid=dset%ncid)
-         write(6,*), 'true nonmpicomm', ncerr
       end if
     else
-         write(6,*), 'before false'
       ncerr = nf90_open(trim(filename), NF90_NOWRITE, ncid=dset%ncid)
-         write(6,*), 'after false'
     end if
     if (return_errcode) then
        call nccheck(ncerr,halt=.false.,fname=filename)

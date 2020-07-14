@@ -361,37 +361,71 @@ subroutine get_gefs_for_regional
 
 ! LB: add netCDF header information: 
      else ! use_gfs_ncio and get this information
-        write(6,*) 'LB netcdf test0',nhr_assimilation
+        write(6,*) 'LB netcdf test0'
         write(sfilename,'("sfcf",i2.2)')nhr_assimilation
         write(6,*) ' LB netcdf test1'
+        write(6,*) ' LB netcdf nhr',nhr_assimilation
         ! open the netCDF file
         atmges = open_dataset(filename)
-        sfcges = open_dataset(sfilename)
+        !sfcges = open_dataset(sfilename)
         write(6,*) ' LB netcdf test2'
         ! get dimension sizes
         ncdim = get_dim(atmges, 'grid_xt'); gfshead%lonb = ncdim%len
         ncdim = get_dim(atmges, 'grid_yt'); gfshead%latb = ncdim%len
         ncdim = get_dim(atmges, 'pfull') ; gfshead%levs = ncdim%len
-         
+        write(6,*) 'region lonb latb=',gfshead%lonb, gfshead%latb,gfshead%levs         
         ! LB: add nsig_gfs here: 
         nsig_gfs = gfshead%levs
         ! hard code jcap,idsl,idvc
         gfshead%jcap = -9999
         gfshead%idsl= 1
         gfshead%idvc = 2
-        call read_attribute(atmges, 'ncnsto', ntrac)
-        gfshead%ntrac = ntrac(1)
-        call read_attribute(sfcges, 'ncld', ncld)
-        gfshead%ncldt = ncld(1)
-        call close_dataset(sfcges)
+
+        ! FV3GFS write component does not include JCAP, infer from DIMY-2
+        if (njcap<0) njcap=latb-2
+
+        nlat_gfs=gfshead%latb+2
+        nlon_gfs=gfshead%lonb
+        nsig_gfs=gfshead%levs
+        write(6,*) 'jcap', jcap_ens
+        write(6,*) 'jcap', gfshead%jcap
+        write(6,*) 'jcap1'
+
+!         jcap_gfs=latb-2
+         jcap_gfs=gfshead%latb-2
+
+!        if(gfshead%jcap > 0)then
+!          jcap_gfs=gfshead%jcap
+!        else if(jcap_ens > 0)then
+!          jcap_gfs=jcap_ens
+!        else
+!          write(6,*)'get_gefs_for_regional:ERROR ncio jcap is undefined'
+!        endif
+
+        write(6,*) 'regional jcap_gfs=',jcap_gfs
+
+
+!        call read_attribute(atmges, 'ncnsto', ntrac)
+!        gfshead%ntrac = ntrac(1)
+!        call read_attribute(sfcges, 'ncld', ncld)
+!        gfshead%ncldt = ncld(1)
+
+!        write(6,*) 'regional ntrac=', gfshead%ntrac
+!        write(6,*) 'regional ncldt=', gfshead%ncldt
+
+!        call close_dataset(sfcges)
         if (mype==mype_out) write(6,*)'GESINFO:  Read NCEP FV3GFS netCDF ', &
            'format file, ',trim(filename)
         ! hard code nvcoord to be 2
         gfshead%nvcoord=2 ! ak and bk
+        write(6,*) 'nvcoord=', gfshead%nvcoord
         if (allocated(gfsheadv%vcoord)) deallocate(gfsheadv%vcoord)
         allocate(gfsheadv%vcoord(gfshead%levs+1,gfshead%nvcoord))
+        write(6,*) 'test1'
         call read_attribute(atmges, 'ak', aknc)
         call read_attribute(atmges, 'bk', bknc)
+        write(6,*) 'test2'
+        write(6,*) 'ak,bk=', aknc, bknc
         do k=1,gfshead%levs+1
            kr = gfshead%levs+2-k
            gfsheadv%vcoord(k,1) = aknc(kr)
@@ -410,13 +444,12 @@ subroutine get_gefs_for_regional
 
         call close_dataset(atmges)
 
-        write(6,*) ' netCDF:fhour,idate=',fhour,idate2
-        write(6,*) ' netCDF:fhour1,idate=',fhour1
+        write(6,*) ' netCDF:fhour,idate=',fhour1,idate2
         write(6,*) ' netCDF:iadate(y,m,d,hr,min)=',iadate
-        write(6,*) ' netCDF: jcap,levs=',levs
-        write(6,*) ' netCDF: latb,lonb=',latb,lonb
-        write(6,*) ' netCDF: idvc,nvcoord=',idvc,nvcoord
-        write(6,*) ' netCDF: idsl=',idsl
+        write(6,*) ' netCDF: jcap,levs=',gfshead%levs
+        write(6,*) ' netCDF: latb,lonb=',gfshead%latb,gfshead%lonb
+        write(6,*) ' netCDF: nvcoord=',gfshead%nvcoord
+        write(6,*) ' netCDF: idvc,idsl=',gfshead%idvc,gfshead%idsl
 
   end if
 

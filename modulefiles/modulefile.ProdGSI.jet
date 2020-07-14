@@ -43,5 +43,6 @@ module load ip-intel-sandybridge/3.0.0
 #module load hdf5
 #module load netcdf
 
-export NETCDF=${NETCDF4}
-export NETCDF_DIR=${NETCDF4}
+module load netcdfp/4.7.4
+#export NETCDF=${NETCDF4}
+#export NETCDF_DIR=${NETCDF4}

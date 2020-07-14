@@ -109,7 +109,8 @@ subroutine init_gfs_stratosphere
 
    use_gfs_stratosphere=.false.
    good_o3mr=.false.
-   nsig_max=120
+!   nsig_max=120
+   nsig_max=127
    k0m=0
    k1m=0
    k0r=0
@@ -1153,11 +1154,17 @@ subroutine add_gfs_stratosphere
          ncdim = get_dim(atmges, 'grid_xt'); lonb = ncdim%len
          ncdim = get_dim(atmges, 'grid_yt'); latb = ncdim%len
          ncdim = get_dim(atmges, 'pfull'); levs = ncdim%len
+         write(6,*) 'ncio lonb latb lev =',lonb, latb, levs
          njcap = -9999
+         ! FV3GFS write component does not include JCAP, infer from DIMY-2
+         if (njcap<0) njcap=latb-2
          jcap_org = njcap
+         write(6,*) 'ncio njcap =',jcap_org, njcap
          idate6 = get_idate_from_time_units(atmges)
+         write(6,*) 'ncio idate =',idate6
          call read_vardata(atmges, 'time', fhour2)
          fhour = fhour2(1)
+         write(6,*) 'ncio fhour =',fhour
          call close_dataset(atmges)
          
       else
