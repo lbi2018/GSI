@@ -592,6 +592,7 @@ subroutine mix_gfs_nmmb_vcoords(deta1 ,aeta1 ,eta1 ,deta2 ,aeta2 ,eta2 ,pdtop,pt
    ! compute nsigm
    nsigm=k0r+kkend+nsigg-k1g-1
    k0m=k0r
+   write(6,'(" k0r,kkend,k1g=",3i4)')k0r,kkend,k1g
    write(6,'(" nsigg,nsigr,nsigm=",3i4)')nsigg,nsigr,nsigm
    if (nsigm>=nsig_max) then
       write(6,*)' FAILURE IN MERGE_VCOORDS, NSIGM > NSIG_MAX.  ADJUST NSIG_MAX ACCORDINGLY'

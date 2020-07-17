@@ -133,6 +133,7 @@ subroutine get_gefs_for_regional
   integer(i_kind),dimension(4):: idate4
   integer(i_kind),dimension(8) :: ida,jda 
   integer(i_kind),dimension(5) :: iadate_gfs
+  integer(i_kind),dimension(6):: idate6
   real(r_kind) hourg
   real(r_kind),dimension(5):: fha
   integer(i_kind) istatus
@@ -142,7 +143,7 @@ subroutine get_gefs_for_regional
   integer(i_kind) :: njcap, idvc, idsl
   integer(i_kind) :: istop = 101
   integer(i_kind),dimension(7):: idate
-  integer(i_kind),dimension(6):: idate2
+!  integer(i_kind),dimension(6):: idate2
   real(r_kind) :: fhour
   type(nemsio_gfile) :: gfile
   type(Dataset) :: atmges,sfcges      !LB
@@ -433,28 +434,37 @@ subroutine get_gefs_for_regional
         end do
         deallocate(aknc,bknc) 
         ! get time information
-        idate2 = get_idate_from_time_units(atmges)
-        gfshead%idate(1) = idate2(4)  !hour
-        gfshead%idate(2) = idate2(2)  !month
-        gfshead%idate(3) = idate2(3)  !day
-        gfshead%idate(4) = idate2(1)  !year
+        idate6 = get_idate_from_time_units(atmges)
+        gfshead%idate(1) = idate6(4)  !hour
+        gfshead%idate(2) = idate6(2)  !month
+        gfshead%idate(3) = idate6(3)  !day
+        gfshead%idate(4) = idate6(1)  !year
         call read_vardata(atmges, 'time', fhour1) ! might need to change this to attribute later
                                                ! depends on model changes from Jeff Whitaker
         gfshead%fhour = fhour1(1)
 
         call close_dataset(atmges)
 
-        write(6,*) ' netCDF:fhour,idate=',fhour1,idate2
+        write(6,*) ' netCDF:fhour,idate=',fhour1,idate6
         write(6,*) ' netCDF:iadate(y,m,d,hr,min)=',iadate
         write(6,*) ' netCDF: jcap,levs=',gfshead%levs
         write(6,*) ' netCDF: latb,lonb=',gfshead%latb,gfshead%lonb
         write(6,*) ' netCDF: nvcoord=',gfshead%nvcoord
         write(6,*) ' netCDF: idvc,idsl=',gfshead%idvc,gfshead%idsl
 
+        hourg = fhour1(1)
+        !hourg = gfshead%fhour
+        write(6,*) 'hourg, fhour1(1) = ',hourg, fhour1(1)
+        idate4(1) = idate6(4)
+        idate4(2) = idate6(2)
+        idate4(3) = idate6(3)
+        idate4(4) = idate6(1)
+
   end if
 
 ! Compute valid time from ensemble date and forecast length and compare to iadate, the analysis time
   iyr=idate4(4)
+  write(6,*) 'iyr0=', iyr
   ihourg=hourg
   if(iyr>=0.and.iyr<=99) then
      if(iyr>51) then
@@ -463,6 +473,8 @@ subroutine get_gefs_for_regional
         iyr=iyr+2000
      end if
   end if
+  write(6,*) 'iyr1=', iyr
+
   fha=zero ; ida=0; jda=0
   fha(2)=ihourg    ! relative time interval in hours
   ida(1)=iyr       ! year
@@ -474,30 +486,47 @@ subroutine get_gefs_for_regional
   iadate_gfs(1)=jda(1) ! year
   iadate_gfs(2)=jda(2) ! mon
   iadate_gfs(3)=jda(3) ! day
+  write(6,*) 'iadate_gfs year=', iadate_gfs(1)
+  write(6,*) 'iadate_gfs mon=', iadate_gfs(2)
+  write(6,*) 'iadate_gfs day=', iadate_gfs(3)
   if(ntlevs_ens > 1) then
      iadate_gfs(4)=jda(5)+hrdifsig(ntguessig)-hrdifsig(it) ! hour
   else
      iadate_gfs(4)=jda(5) ! hour
   endif
   iadate_gfs(5)=0      ! minute
+
+  write(6,*) 'iadate_gfs hou=', iadate_gfs(4)
+
+  write(6,*) 'iadate=', iadate
+  write(6,*) 'iadate_gfs=', iadate_gfs
+
   if(mype == 0) then
      write(6,*)' in get_gefs_for_regional, iadate_gefs=',iadate_gfs
      write(6,*)' in get_gefs_for_regional, iadate    =',iadate
   end if
+
            call w3fs21(iadate,nming1)
            call w3fs21(iadate_gfs,nming2)
+  write(6,*) 'nming1=', nming1
+  write(6,*) 'nming2=', nming2
+  write(6,*) 'l_ens_in_diff_time=', l_ens_in_diff_time
+
   if( (nming1/=nming2) .and. (.not.l_ens_in_diff_time) ) then
      if(mype == 0) write(6,*)' GEFS ENSEMBLE MEMBER DATE NOT EQUAL TO ANALYSIS DATE, PROGRAM STOPS'
      call stop2(85)
   end if
      
-
+  write(6,*) ' pass date check '
 !         set up ak5,bk5,ck5 for use in computing 3d pressure field (needed for vertical interp to regional)
 !                            following is code segment from gesinfo.F90
   allocate(ak5(nsig_gfs+1))
   allocate(bk5(nsig_gfs+1))
   allocate(ck5(nsig_gfs+1))
   allocate(tref5(nsig_gfs))
+  
+  idvc=gfshead%idvc
+  idsl=gfshead%idsl
   do k=1,nsig_gfs+1
      ak5(k)=zero
      bk5(k)=zero
@@ -523,6 +552,29 @@ subroutine get_gefs_for_regional
         write(6,*)'GET_GEFS_FOR_REGIONAL:  ***ERROR*** INVALID value for nvcoord=',sighead%nvcoord
         call stop2(85)
      endif
+  else if ( use_gfs_ncio ) then !LB netCDF option
+     if (gfshead%nvcoord == 1) then
+        write(6,*) 'nvcord test1'
+        do k=1,nsig_gfs+1
+           bk5(k) = gfsheadv%vcoord(k,1)
+        end do
+     elseif (gfshead%nvcoord == 2) then
+        write(6,*) 'nvcord test2'
+        do k = 1,nsig_gfs+1
+           ak5(k) = gfsheadv%vcoord(k,1)*zero_001
+           bk5(k) = gfsheadv%vcoord(k,2)
+        end do
+     elseif (gfshead%nvcoord == 3) then
+        write(6,*) 'nvcord test3'
+        do k = 1,nsig_gfs+1
+           ak5(k) = gfsheadv%vcoord(k,1)*zero_001
+           bk5(k) = gfsheadv%vcoord(k,2)
+           ck5(k) = gfsheadv%vcoord(k,3)*zero_001
+        end do
+     else
+        write(6,*)'GET_GEFS_FOR_REGIONAL netCDF:  ***ERROR*** INVALID value for nvcoord=',gfshead%nvcoord
+        call stop2(85)
+     endif
   else
      if (nvcoord == 1) then
         do k=1,nsig_gfs+1
@@ -544,6 +596,10 @@ subroutine get_gefs_for_regional
         call stop2(85)
      endif
   end if
+
+!  do k=1,nsig_gfs+1
+!    write(6,*)' ak5,bk5,ck5=',ak5(k),bk5(k),ck5(k)
+!  enddo
 
   if(mype == 0 .and. print_verbose)then
      do k=1,nsig_gfs+1
@@ -652,9 +708,29 @@ subroutine get_gefs_for_regional
               work_sub(1,i,j,kq)=q(i,j,k)
               work_sub(1,i,j,koz)=oz(i,j,k)
               work_sub(1,i,j,kcw)=cwmr(i,j,k)
+!              if ( tv(i,j,k) .lt. 0. ) then
+!                write(6,*) 'negative tv', i, j, k, tv(i,j,k)
+!              endif
            end do
         end do
      end do
+
+!     do k=1,grd_gfs%nsig
+!       write(6,*) 'tv check, k=', k, tv(44,50,k)
+!     enddo
+
+
+     !write(6,*) grd_gfs%nsig, grd_gfs%lon2, grd_gfs%lat2
+     !write(6,*) 'grd_gfs%nsig= 1'
+     !do i=1,grd_gfs%lat2
+     !  write(6,*) (tv(i,j,1), j=1,grd_gfs%lon2)
+     !end do
+     !write(6,*) 'grd_gfs%nsig= last'
+     !do i=1,grd_gfs%lat2
+     !  write(6,*) (tv(i,j,grd_gfs%nsig), j=1,grd_gfs%lon2)
+     !end do
+        
+     
      kz=num_fields ; kps=kz-1
      do j=1,grd_gfs%lon2
         do i=1,grd_gfs%lat2
@@ -916,6 +992,8 @@ subroutine get_gefs_for_regional
 !                   if(mype==0) write(6,*)' with halo, n,min,max ges_ps - matt ps =',n,pdiffmin0,pdiffmax0
 
   end do   !  end loop over ensemble members.
+
+  write(6,*) 'ensemble loop end check'
 
 !   next, compute mean of ensembles.
 

@@ -43,7 +43,7 @@ subroutine read_gfs_ozone_for_regional
 
   use gridmod, only: nlat,nlon,lat2,lon2,nsig,region_lat,region_lon,check_gfs_ozone_date
   use gridmod, only: jcap_gfs,nlat_gfs,nlon_gfs,wrf_nmm_regional,use_gfs_nemsio, &
-                     use_gfs_ncio
+                     use_gfs_ncio,ncepgfs_head,ncepgfs_headv
   use constants,only: zero,half,rd_over_cp,one,h300,r60,r3600
   use constants, only: max_varname_length
   use mpimod, only: mpi_comm_world,ierror,mype,mpi_rtype,mpi_min,mpi_max,npe
@@ -133,6 +133,8 @@ subroutine read_gfs_ozone_for_regional
   real(r_kind),allocatable,dimension(:,:,:,:)::ges_oz
   logical print_verbose
   type(Dataset) :: atmges
+  type(ncepgfs_head):: gfshead
+  type(ncepgfs_headv):: gfsheadv
   type(Dimension) :: ncdim
   real(r_kind), allocatable, dimension(:) :: fhour2,aknc,bknc
 
@@ -211,48 +213,72 @@ subroutine read_gfs_ozone_for_regional
 
 ! LB: add netcdf code here
    else if (use_gfs_ncio) then
-      write(6,*) 'LB test0', filename
+      write(6,*) 'Can we reach here'
+      write(6,*) 'reozone filename=', filename
       atmges = open_dataset(filename)
-      write(6,*) 'LB test3' 
       ! get dimension sizes
-      ncdim = get_dim(atmges, 'grid_xt'); lonb = ncdim%len
-      ncdim = get_dim(atmges, 'grid_yt'); latb = ncdim%len
-      ncdim = get_dim(atmges, 'pfull'); levs = ncdim%len
-      nsig_gfs=levs
-      write(6,*) 'LB test4', lonb, latb, levs
+      ncdim = get_dim(atmges, 'grid_xt'); gfshead%lonb = ncdim%len
+      ncdim = get_dim(atmges, 'grid_yt'); gfshead%latb = ncdim%len
+      ncdim = get_dim(atmges, 'pfull'); gfshead%levs = ncdim%len
+      nsig_gfs=gfshead%levs
+      write(6,*) 'reozone lonb latb=',gfshead%lonb, gfshead%latb,gfshead%levs
+      ! hard code jcap,idsl,idvc
+      gfshead%jcap = -9999
+      gfshead%idsl= 1
+      gfshead%idvc = 2
 
       ! FV3GFS write component does not include JCAP, infer from DIMY-2
       if (njcap<0) njcap=latb-2
+      
+      nlat_gfs=gfshead%latb+2
+      nlon_gfs=gfshead%lonb
+      nsig_gfs=gfshead%levs
+      
+      jcap_gfs=gfshead%latb-2
+      write(6,*) 'reozone jcap', gfshead%jcap,jcap_gfs
 
       ! get time information
       idate6 = get_idate_from_time_units(atmges)
-      write(6,*) 'LB test5', idate6
+      gfshead%idate(1) = idate6(4)  !hour
+      gfshead%idate(2) = idate6(2)  !month
+      gfshead%idate(3) = idate6(3)  !day
+      gfshead%idate(4) = idate6(1)  !year
       call read_vardata(atmges, 'time', fhour2) ! might need to change this to attribute later
                                                ! depends on model changes from Jeff Whitaker
-      fhour = fhour2(1)
-      write(6,*) ' input filename=',filename
-      write(6,*) ' netcdf info: fhour,idate=',fhour,idate6
-      write(6,*) ' netcdf info: levs=',levs
+      gfshead%fhour = fhour2(1)
 
-      nsig_gfs=levs
-      jcap_org=njcap
+      ! hard code nvcoord to be 2
+      gfshead%nvcoord=2 ! ak and bk
+      write(6,*) 'reozone nvcoord=', gfshead%nvcoord
+      if (allocated(gfsheadv%vcoord)) deallocate(gfsheadv%vcoord)
+      allocate(gfsheadv%vcoord(gfshead%levs+1,gfshead%nvcoord))
 
-      nvcoord=2 ! ak and bk
-      allocate(vcoord(levs+1,nvcoord))
       call read_attribute(atmges, 'ak', aknc)
       call read_attribute(atmges, 'bk', bknc)
-      do k=1,levs+1
-         kr = levs+2-k
-         vcoord(k,1) = aknc(kr)
-         vcoord(k,2) = bknc(kr)
+
+      do k=1,gfshead%levs+1
+          kr = gfshead%levs+2-k
+          gfsheadv%vcoord(k,1) = aknc(kr)
+          gfsheadv%vcoord(k,2) = bknc(kr)
       end do
-      if(print_verbose)then
-         write(6,*) ' netcdf : nvcoord=', nvcoord
-         do k=1,levs+1
-            write(6,*)' k,vcoord=',k,vcoord(k,:)
-         enddo
-      end if
+      deallocate(aknc,bknc)
+
       call close_dataset(atmges)
+
+      write(6,*) ' reozone:fhour,idate=',fhour2,idate6
+      write(6,*) ' reozone:iadate(y,m,d,hr,min)=',iadate
+      write(6,*) ' reozone: jcap,levs=',gfshead%levs
+      write(6,*) ' reozone: latb,lonb=',gfshead%latb,gfshead%lonb
+      write(6,*) ' reozone: nvcoord=',gfshead%nvcoord
+      write(6,*) ' reozone: idvc,idsl=',gfshead%idvc,gfshead%idsl
+
+      hourg = fhour2(1)
+       !hourg = gfshead%fhour
+       write(6,*) 'hourg, fhour2(1) = ',hourg, fhour2(1)
+       idate4(1) = idate6(4)
+       idate4(2) = idate6(2)
+       idate4(3) = idate6(3)
+       idate4(4) = idate6(1)
 
   else
      call nemsio_init(iret=iret)
@@ -351,6 +377,10 @@ subroutine read_gfs_ozone_for_regional
      write(6,*)' in read_gfs_ozone_for_regional, iadate_gfs=',iadate_gfs
      write(6,*)' in read_gfs_ozone_for_regional, iadate    =',iadate
   end if
+
+  write(6,*) 'reozone iadate=', iadate
+  write(6,*) 'reozone iadate_gfs=', iadate_gfs
+
   if((iadate_gfs(1)/=iadate(1).or.iadate_gfs(2)/=iadate(2).or.iadate_gfs(3)/=iadate(3).or.&
       iadate_gfs(4)/=iadate(4).or.iadate_gfs(5)/=iadate(5)) .and. .not. wrf_nmm_regional ) then
      if(mype == 0) write(6,*)' WARNING: GFS OZONE FIELD DATE NOT EQUAL TO ANALYSIS DATE'
@@ -367,6 +397,9 @@ subroutine read_gfs_ozone_for_regional
   allocate(bk5(nsig_gfs+1))
   allocate(ck5(nsig_gfs+1))
   allocate(tref5(nsig_gfs))
+
+  idvc=gfshead%idvc
+  idsl=gfshead%idsl
   do k=1,nsig_gfs+1
      ak5(k)=zero
      bk5(k)=zero
@@ -390,6 +423,29 @@ subroutine read_gfs_ozone_for_regional
         end do
      else
         write(6,*)'READ_GFS_OZONE_FOR_REGIONAL:  ***ERROR*** INVALID value for nvcoord=',sighead%nvcoord,filename
+        call stop2(85)
+     endif
+   else if ( use_gfs_ncio ) then !LB netCDF option
+     if (gfshead%nvcoord == 1) then
+        write(6,*) 'nvcord test1'
+        do k=1,nsig_gfs+1
+           bk5(k) = gfsheadv%vcoord(k,1)
+        end do
+     elseif (gfshead%nvcoord == 2) then
+        write(6,*) 'nvcord test2'
+        do k = 1,nsig_gfs+1
+           ak5(k) = gfsheadv%vcoord(k,1)*zero_001
+           bk5(k) = gfsheadv%vcoord(k,2)
+        end do
+     elseif (gfshead%nvcoord == 3) then
+        write(6,*) 'nvcord test3'
+        do k = 1,nsig_gfs+1
+           ak5(k) = gfsheadv%vcoord(k,1)*zero_001
+           bk5(k) = gfsheadv%vcoord(k,2)
+           ck5(k) = gfsheadv%vcoord(k,3)*zero_001
+        end do
+     else
+        write(6,*)'***ERROR*** INVALID value nvcoord=',gfshead%nvcoord
         call stop2(85)
      endif
   else
